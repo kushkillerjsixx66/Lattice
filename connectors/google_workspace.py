@@ -1,4 +1,8 @@
+import os
+from dotenv import load_dotenv
 from connectors.mcp_bridges import MCPConnector
+
+load_dotenv()
 
 class GeminiSensoryLayer(MCPConnector):
     """
@@ -9,6 +13,12 @@ class GeminiSensoryLayer(MCPConnector):
     def __init__(self):
         super().__init__(service_name="google_workspace", auth_type="oauth2")
         self.watched_services = ["gmail", "docs", "drive"]
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+        
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY not found in environment variables")
+        
+        print(f"[SENSORY] Gemini API initialized: {self.gemini_api_key[:10]}...")
 
     def sense(self, event: dict) -> dict | None:
         """
@@ -53,3 +63,14 @@ class GeminiSensoryLayer(MCPConnector):
         base["actions"] += ["watch_gmail", "watch_docs", "emit_pulse"]
         base["watched_services"] = self.watched_services
         return base
+
+    def call_gemini(self, prompt: str) -> str:
+        """
+        Makes a request to Gemini API for AI-powered intent understanding.
+        """
+        import google.generativeai as genai
+        
+        genai.configure(api_key=self.gemini_api_key)
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content(prompt)
+        return response.text
