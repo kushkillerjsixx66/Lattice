@@ -1,1 +1,21 @@
-{}
+{
+    "workflow_id": "standard_research_v1",
+    "nodes": [
+          {
+                  "id": "INGEST",
+                  "skill": "research_brief",
+                  "params": {"depth": "comprehensive"}
+          },
+          {
+                  "id": "EXECUTE",
+                  "skill": "executor",
+                  "depends_on": ["INGEST"]
+          },
+          {
+                  "id": "VERIFY",
+                  "skill": "verifier",
+                  "depends_on": ["EXECUTE"]
+          }
+    ],
+    "safety_level": "high"
+}
