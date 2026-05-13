@@ -20,11 +20,11 @@ def boot() -> dict:
       print(f"[BOOT] Sensory layer ready: {caps['watched_services']}")
       print(f"[BOOT] Sandbox stateless: {sandbox.is_stateless}")
 
-    return {
+return {
               "sensory":      sensory_layer,
               "orchestrator": orchestrator,
               "sandbox":      sandbox,
-    }
+       }
 
 
 def ingest_intent(raw_event: dict, ctx: dict) -> None:
