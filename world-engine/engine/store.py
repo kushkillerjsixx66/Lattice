@@ -99,6 +99,16 @@ class WorldStore:
             );
             CREATE INDEX IF NOT EXISTS idx_events_world_revision
                 ON events(world_id, post_revision);
+            CREATE TRIGGER IF NOT EXISTS events_reject_update
+            BEFORE UPDATE ON events
+            BEGIN
+                SELECT RAISE(ABORT, 'event history is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS events_reject_delete
+            BEFORE DELETE ON events
+            BEGIN
+                SELECT RAISE(ABORT, 'event history is append-only');
+            END;
             """
         )
 
