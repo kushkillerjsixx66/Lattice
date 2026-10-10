@@ -19,11 +19,9 @@ MCP is the intended typed interface to these capabilities; it is not the source 
 
 The seeded scenario contains a river, two settlements, farmland, a forest, a trade route, and a governing institution. The first deterministic rule evaluates per-turn grain production and food demand, reports unmet food demand, and derives water access from an explicit river relationship.
 
-From the repository root, set PYTHONPATH so Python can import the package inside the hyphenated project directory:
+Run this from the repository root after setting PYTHONPATH=world-engine in your environment:
 
-```bash
-export PYTHONPATH=world-engine
-python
+```python
 from engine.store import WorldStore
 from engine.valley import preview_turn, seed_valley
 
