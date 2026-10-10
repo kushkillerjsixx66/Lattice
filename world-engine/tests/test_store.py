@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from engine.store import RevisionConflict, ValidationError, WorldStore
@@ -95,5 +97,18 @@ def test_empty_transition_is_rejected(tmp_path):
     with pytest.raises(ValidationError, match="at least one change"):
         store.apply_transition("valley", 0, [], actor="test", intent="empty")
     assert store.get_world("valley")["revision"] == 0
+    assert len(store.list_events("valley")) == 1
+    store.close()
+
+
+def test_event_history_rejects_update_and_delete(tmp_path):
+    store, _ = create_store(tmp_path)
+    event_id = store.list_events("valley")[0]["event_id"]
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        store._connection.execute("UPDATE events SET outcome = 'REWRITTEN' WHERE event_id = ?", (event_id,))
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        store._connection.execute("DELETE FROM events WHERE event_id = ?", (event_id,))
+
     assert len(store.list_events("valley")) == 1
     store.close()
