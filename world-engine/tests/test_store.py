@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from world_engine.engine.store import RevisionConflict, ValidationError, WorldStore
+from engine.store import RevisionConflict, ValidationError, WorldStore
 
 
 def create_store(tmp_path):
