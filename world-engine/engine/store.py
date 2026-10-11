@@ -212,6 +212,81 @@ class WorldStore:
             )
         return self.get_world(identifier)
 
+    def create_world_with_entities(
+        self,
+        name: str,
+        entities: Sequence[Mapping[str, Any]],
+        world_id: str | None = None,
+        *,
+        actor: str,
+        intent: str,
+        event_type: str = "SCENARIO_SEEDED",
+    ) -> dict[str, Any]:
+        """Create a world and its initial entities in one transaction.
+
+        The creation event is revision 0 and the initialization event is
+        revision 1. If any entity or event write fails, the world, entities,
+        and both events roll back together. This is a storage primitive only:
+        it does not evaluate authority or authorize scenario initialization.
+        """
+        if not isinstance(name, str) or not name.strip():
+            raise ValidationError("world name must be a non-empty string")
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValidationError("actor must be a non-empty string")
+        if not isinstance(intent, str) or not intent.strip():
+            raise ValidationError("intent must be a non-empty string")
+        if not isinstance(event_type, str) or not event_type.strip():
+            raise ValidationError("event_type must be a non-empty string")
+        if not entities:
+            raise ValidationError("initial entities must not be empty")
+
+        normalized = [self._validate_change(change) for change in entities]
+        if any(change["op"] != "create" for change in normalized):
+            raise ValidationError("initial entities may contain create operations only")
+
+        identifier = world_id or str(uuid.uuid4())
+        created_at = _now()
+        world_event_id = str(uuid.uuid4())
+        seed_event_id = str(uuid.uuid4())
+        with self._transaction() as db:
+            db.execute(
+                "INSERT INTO worlds(world_id, name, revision, world_time, created_at) VALUES (?, ?, 0, 0, ?)",
+                (identifier, name.strip(), created_at),
+            )
+            db.execute(
+                "INSERT INTO events(event_id, world_id, event_type, pre_revision, post_revision, actor, intent, payload_json, outcome, event_time) VALUES (?, ?, ?, NULL, 0, ?, ?, ?, ?, ?)",
+                (world_event_id, identifier, "WORLD_CREATED", "system",
+                 "initialize world", _json({"name": name.strip()}), "COMMITTED", created_at),
+            )
+
+            for change in normalized:
+                entity_id = change["entity_id"]
+                exists = db.execute(
+                    "SELECT 1 FROM entities WHERE world_id = ? AND entity_id = ?",
+                    (identifier, entity_id),
+                ).fetchone()
+                if exists is not None:
+                    raise ValidationError(f"entity already exists: {entity_id}")
+                db.execute(
+                    "INSERT INTO entities(world_id, entity_id, entity_type, attributes_json, relationships_json, lifecycle_state, created_revision, updated_revision, provenance_event_id) VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)",
+                    (identifier, entity_id, change["entity_type"],
+                     _json(change["attributes"]), _json(change["relationships"]),
+                     change["lifecycle_state"], seed_event_id),
+                )
+
+            db.execute(
+                "UPDATE worlds SET revision = 1 WHERE world_id = ?", (identifier,)
+            )
+            db.execute(
+                "INSERT INTO events(event_id, world_id, event_type, pre_revision, post_revision, actor, intent, payload_json, outcome, event_time) VALUES (?, ?, ?, 0, 1, ?, ?, ?, ?, ?)",
+                (seed_event_id, identifier, event_type, actor.strip(), intent.strip(),
+                 _json({"changes": [
+                     {"op": "create", "entity_id": change["entity_id"],
+                      "after": change} for change in normalized
+                 ]}), "COMMITTED", _now()),
+            )
+        return self.get_world(identifier)
+
     def get_world(self, world_id: str) -> dict[str, Any]:
         row = self._connection.execute(
             "SELECT world_id, name, revision, world_time, created_at FROM worlds WHERE world_id = ?",
