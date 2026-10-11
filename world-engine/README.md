@@ -31,6 +31,8 @@ with WorldStore("valley.sqlite3") as store:
     seed_valley(store)  # Explicit initialization; do not expose as an ungoverned tool.
     proposal = preview_turn(store)  # Pure preview; does not mutate world state.
     print(proposal)
+    full_turn = preview_valley_turn(store)  # One turn only; preview, not execution.
+    print(full_turn)
     trade = preview_grain_transfer(store, amount=5)  # Pure proposal; still not execution.
     print(trade)
     observe_committed_world(store)  # Records claims about simulated state, not external reality.
