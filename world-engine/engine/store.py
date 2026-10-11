@@ -170,6 +170,66 @@ class WorldStore:
         result["relationships"] = json.loads(result.pop("relationships_json"))
         return result
 
+    def advance_world_time(
+        self,
+        world_id: str,
+        expected_revision: int,
+        steps: int,
+        *,
+        actor: str,
+        intent: str,
+    ) -> dict[str, Any]:
+        """Advance simulation time as an explicit, revisioned state transition.
+
+        This storage primitive enforces positive bounded input, revision
+        consistency, and atomic event lineage. It does not evaluate authority;
+        callers must enforce the applicable governance boundary first.
+        """
+        if not isinstance(steps, int) or isinstance(steps, bool) or steps <= 0:
+            raise ValidationError("steps must be a positive integer")
+        if not isinstance(expected_revision, int) or isinstance(expected_revision, bool) or expected_revision < 0:
+            raise ValidationError("expected_revision must be a non-negative integer")
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValidationError("actor must be a non-empty string")
+        if not isinstance(intent, str) or not intent.strip():
+            raise ValidationError("intent must be a non-empty string")
+
+        event_id = str(uuid.uuid4())
+        with self._transaction() as db:
+            world = db.execute(
+                "SELECT revision, world_time FROM worlds WHERE world_id = ?", (world_id,)
+            ).fetchone()
+            if world is None:
+                raise ValidationError(f"unknown world: {world_id}")
+            actual_revision = int(world["revision"])
+            if actual_revision != expected_revision:
+                raise RevisionConflict(
+                    f"expected revision {expected_revision}, current revision is {actual_revision}"
+                )
+            post_revision = actual_revision + 1
+            pre_time = int(world["world_time"])
+            post_time = pre_time + steps
+            db.execute(
+                "UPDATE worlds SET revision = ?, world_time = ? WHERE world_id = ?",
+                (post_revision, post_time, world_id),
+            )
+            db.execute(
+                "INSERT INTO events(event_id, world_id, event_type, pre_revision, post_revision, actor, intent, payload_json, outcome, event_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event_id, world_id, "WORLD_TIME_ADVANCED", actual_revision, post_revision,
+                 actor.strip(), intent.strip(),
+                 _json({"steps": steps, "pre_world_time": pre_time, "post_world_time": post_time}),
+                 "COMMITTED", _now()),
+            )
+        return {
+            "event_id": event_id,
+            "world_id": world_id,
+            "pre_revision": actual_revision,
+            "post_revision": post_revision,
+            "pre_world_time": pre_time,
+            "post_world_time": post_time,
+            "outcome": "COMMITTED",
+        }
+
     def apply_transition(
         self,
         world_id: str,
