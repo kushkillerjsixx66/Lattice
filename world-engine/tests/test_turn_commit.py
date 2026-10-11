@@ -44,6 +44,33 @@ def test_committed_turn_updates_resources_and_time_in_one_revision(tmp_path):
         assert result["execution_authorized"] is False
 
 
+def test_committed_turn_remains_reconstructable_from_event_lineage(tmp_path):
+    from engine.outcomes import compare_world_revisions
+
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        seed_valley(store)
+        proposal = preview_valley_turn(store)
+        store.commit_turn_transition(
+            "valley",
+            proposal["expected_revision"],
+            proposal["proposed_changes"],
+            actor="test-governed-caller",
+            intent="commit turn for lineage reconstruction",
+            ruleset_id=proposal["ruleset_id"],
+        )
+
+        comparison = compare_world_revisions(
+            store, world_id="valley", baseline_revision=1, outcome_revision=2
+        )
+        changed = {item["entity_id"]: item for item in comparison["differences"]}
+        assert comparison["causal_conclusion"] is False
+        assert changed["north"]["change_kind"] == "CHANGED"
+        assert changed["north"]["after"]["attributes"]["grain"] == 82
+        assert changed["south"]["after"]["attributes"]["grain"] == 64
+        assert changed["north"]["after"]["updated_revision"] == 2
+        assert store.get_world("valley")["world_time"] == 1
+
+
 def test_committed_turn_rolls_back_entity_updates_if_any_update_fails(tmp_path):
     with WorldStore(tmp_path / "world.sqlite3") as store:
         seed_valley(store)
