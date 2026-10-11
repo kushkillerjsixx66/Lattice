@@ -4,7 +4,7 @@ A persistent hybrid world-building simulation designed as an experimental enviro
 
 ## Status
 
-**Prototype implementation in progress.** The SQLite state store and deterministic Valley scenario rules are implemented with tests. The SQLite-backed epistemic claim ledger records source-scoped claims and derives revision-scoped conflicts without adjudicating them. The prediction ledger registers immutable expectations against the current world revision and evaluates them later against unambiguous observed claims. A read-only revision comparison reconstructs committed entity state from event history and reports descriptive differences without claiming causation. A read-only turn-evaluation report joins preregistered predictions, explicit evaluations, relevant revision-scoped claims, and state differences without evaluating predictions or inferring causation. The MCP server and governance gateway remain unimplemented. No deployment or autonomous execution is enabled.
+**Prototype implementation in progress.** The SQLite state store and deterministic Valley scenario rules are implemented with tests. The SQLite-backed epistemic claim ledger records source-scoped claims and derives revision-scoped conflicts without adjudicating them. The prediction ledger registers immutable expectations against the current world revision and evaluates them later against unambiguous observed claims. A read-only revision comparison reconstructs committed entity state from event history and reports descriptive differences without claiming causation. A read-only turn-evaluation report joins preregistered predictions, explicit evaluations, relevant revision-scoped claims, and state differences without evaluating predictions or inferring causation. A validated transition-proposal envelope now binds a proposed change to an expected revision, actor, intent, authority reference, constraints, evidence, effect, reversibility, recovery plan, and lineage. The envelope explicitly remains NOT_EVALUATED and NOT_EXECUTED; an authority reference is not authorization. The MCP server and governance gateway remain unimplemented. No deployment or autonomous execution is enabled.
 
 ## Core separation
 
@@ -47,10 +47,10 @@ Run the world-engine suite:
 python -m pytest world-engine/tests -q
 ```
 
-Tests cover persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, preregistered prediction evaluation, read-only outcome comparisons across committed revisions, and read-only turn-evaluation reports with prediction/evidence lineage.
+Tests cover persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, preregistered prediction evaluation, read-only outcome comparisons across committed revisions, read-only turn-evaluation reports with prediction/evidence lineage, and non-authorizing transition proposal validation.
 
 ## Governance
 
-This project is subordinate to applicable Lattice Canon. Project-level requirements in this directory are proposals, not canonical amendments. The state store and scenario rules are domain primitives, not an authorization gateway. Changes to canonical governance remain outside this project's scope.
+This project is subordinate to applicable Lattice Canon. Project-level requirements in this directory are proposals, not canonical amendments. The state store, scenario rules, and proposal-envelope builder are domain primitives, not an authorization gateway. Proposal validation establishes structural completeness and revision freshness only; it does not establish permission to execute. Changes to canonical governance remain outside this project's scope.
 
 See [World Engine Specification v0.1](specs/WE-SPEC-001-world-engine-v0.1.md).
