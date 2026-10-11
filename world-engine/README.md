@@ -17,18 +17,18 @@ MCP is the intended typed interface to these capabilities; it is not the source 
 
 ## Initial scenario: The Valley
 
-The seeded scenario contains a river, two settlements, farmland, a forest, a trade route, and a governing institution. The first deterministic rule evaluates per-turn grain production and food demand, reports unmet food demand, and derives water access from an explicit river relationship.
+The seeded scenario contains a river, two settlements, farmland, a forest, a trade route, and a governing institution. The deterministic Valley rules evaluate grain production and food demand, report unmet food demand, derive water access from an explicit river relationship, and preview bounded grain transfers over the seeded trade route. Simulation time advances only through an explicit revisioned store transition.
 
 Run this from the repository root after setting PYTHONPATH=world-engine in your environment:
 
 ```python
 from engine.store import WorldStore
-from engine.valley import preview_turn, seed_valley
+from engine.valley import preview_grain_transfer, preview_turn, seed_valley
 
 with WorldStore("valley.sqlite3") as store:
     seed_valley(store)  # Explicit initialization; do not expose as an ungoverned tool.
     proposal = preview_turn(store)  # Pure preview; does not mutate world state.
-    print(proposal)
+    print(proposal)\n    trade = preview_grain_transfer(store, amount=5)  # Pure proposal; still not execution.\n    print(trade)
 ```
 
 The preview returns an expected revision and exact proposed entity updates. Applying those updates is a separate operation and must remain behind the applicable governance boundary. Previewing is not execution, because verbs should mean things.
@@ -41,7 +41,7 @@ Run the world-engine suite:
 python -m pytest world-engine/tests -q
 ```
 
-Tests cover persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only history, Valley seeding, deterministic previews, and food-shortage accounting.
+Tests cover persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only history, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, and bounded non-mutating trade proposals.
 
 ## Governance
 
