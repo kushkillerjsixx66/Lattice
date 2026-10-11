@@ -20,8 +20,8 @@ def preview_valley_turn(
     simulation-time advance. It captures the current revision and world time so
     callers can detect drift before any separately governed execution.
     """
-    if not isinstance(steps, int) or isinstance(steps, bool) or steps <= 0:
-        raise ValidationError("steps must be a positive integer")
+    if not isinstance(steps, int) or isinstance(steps, bool) or steps != 1:
+        raise ValidationError("turn preview currently supports exactly one step")
 
     world = store.get_world(world_id)
     food = preview_turn(store, world_id)

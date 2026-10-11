@@ -23,13 +23,16 @@ Run this from the repository root after setting PYTHONPATH=world-engine in your 
 
 ```python
 from engine.store import WorldStore
-from engine.valley import preview_grain_transfer, preview_turn, seed_valley\nfrom engine.turn_loop import preview_valley_turn
+from engine.valley import preview_grain_transfer, preview_turn, seed_valley
+from engine.turn_loop import preview_valley_turn
 from engine.epistemic import observe_committed_world, read_epistemic_model
 
 with WorldStore("valley.sqlite3") as store:
     seed_valley(store)  # Explicit initialization; do not expose as an ungoverned tool.
     proposal = preview_turn(store)  # Pure preview; does not mutate world state.
     print(proposal)
+    full_turn = preview_valley_turn(store)  # One turn only; preview, not execution.
+    print(full_turn)
     trade = preview_grain_transfer(store, amount=5)  # Pure proposal; still not execution.
     print(trade)
     observe_committed_world(store)  # Records claims about simulated state, not external reality.
