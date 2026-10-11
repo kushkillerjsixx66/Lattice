@@ -99,6 +99,32 @@ class WorldStore:
             );
             CREATE INDEX IF NOT EXISTS idx_events_world_revision
                 ON events(world_id, post_revision);
+            CREATE TABLE IF NOT EXISTS epistemic_claims (
+                claim_id TEXT PRIMARY KEY,
+                world_id TEXT NOT NULL REFERENCES worlds(world_id),
+                subject TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                value_json TEXT,
+                epistemic_status TEXT NOT NULL CHECK (
+                    epistemic_status IN ('OBSERVED', 'INFERRED', 'HYPOTHESIS', 'UNKNOWN')
+                ),
+                source TEXT NOT NULL,
+                source_ref TEXT NOT NULL,
+                world_revision INTEGER NOT NULL CHECK (world_revision >= 0),
+                recorded_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_epistemic_claims_scope
+                ON epistemic_claims(world_id, world_revision, subject, predicate);
+            CREATE TRIGGER IF NOT EXISTS epistemic_claims_reject_update
+            BEFORE UPDATE ON epistemic_claims
+            BEGIN
+                SELECT RAISE(ABORT, 'epistemic claim history is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS epistemic_claims_reject_delete
+            BEFORE DELETE ON epistemic_claims
+            BEGIN
+                SELECT RAISE(ABORT, 'epistemic claim history is append-only');
+            END;
             CREATE TRIGGER IF NOT EXISTS events_reject_update
             BEFORE UPDATE ON events
             BEGIN
@@ -350,6 +376,110 @@ class WorldStore:
         if "lifecycle_state" in normalized and (not isinstance(normalized["lifecycle_state"], str) or not normalized["lifecycle_state"].strip()):
             raise ValidationError("lifecycle_state must be a non-empty string")
         return normalized
+
+    def record_claim(
+        self,
+        world_id: str,
+        *,
+        subject: str,
+        predicate: str,
+        value: Any,
+        epistemic_status: str,
+        source: str,
+        source_ref: str,
+        world_revision: int,
+    ) -> dict[str, Any]:
+        """Append an epistemic claim without changing authoritative world state.
+
+        CONFLICTED is derived when multiple distinct non-UNKNOWN values exist
+        for the same subject, predicate, and source world revision. It is not an
+        input status and conflict detection does not adjudicate which claim wins.
+        """
+        allowed = {"OBSERVED", "INFERRED", "HYPOTHESIS", "UNKNOWN"}
+        if not isinstance(subject, str) or not subject.strip():
+            raise ValidationError("claim subject must be a non-empty string")
+        if not isinstance(predicate, str) or not predicate.strip():
+            raise ValidationError("claim predicate must be a non-empty string")
+        if not isinstance(epistemic_status, str) or epistemic_status not in allowed:
+            raise ValidationError(f"unsupported epistemic status: {epistemic_status!r}")
+        if not isinstance(source, str) or not source.strip():
+            raise ValidationError("claim source must be a non-empty string")
+        if not isinstance(source_ref, str) or not source_ref.strip():
+            raise ValidationError("claim source_ref must be a non-empty string")
+        if not isinstance(world_revision, int) or isinstance(world_revision, bool) or world_revision < 0:
+            raise ValidationError("world_revision must be a non-negative integer")
+        if epistemic_status == "UNKNOWN" and value is not None:
+            raise ValidationError("UNKNOWN claims must have a null value")
+        if epistemic_status != "UNKNOWN" and value is None:
+            raise ValidationError("non-UNKNOWN claims require a value")
+        try:
+            value_json = None if value is None else _json(value)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("claim value must be JSON-serializable") from exc
+
+        claim_id = str(uuid.uuid4())
+        with self._transaction() as db:
+            world = db.execute(
+                "SELECT revision FROM worlds WHERE world_id = ?", (world_id,)
+            ).fetchone()
+            if world is None:
+                raise ValidationError(f"unknown world: {world_id}")
+            if world_revision > int(world["revision"]):
+                raise ValidationError(
+                    f"claim revision {world_revision} exceeds current world revision {world['revision']}"
+                )
+            db.execute(
+                "INSERT INTO epistemic_claims(claim_id, world_id, subject, predicate, value_json, epistemic_status, source, source_ref, world_revision, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (claim_id, world_id, subject.strip(), predicate.strip(), value_json,
+                 epistemic_status, source.strip(), source_ref.strip(), world_revision, _now()),
+            )
+        return {
+            "claim_id": claim_id,
+            "world_id": world_id,
+            "subject": subject.strip(),
+            "predicate": predicate.strip(),
+            "value": value,
+            "epistemic_status": epistemic_status,
+            "effective_status": epistemic_status,
+            "source": source.strip(),
+            "source_ref": source_ref.strip(),
+            "world_revision": world_revision,
+        }
+
+    def list_claims(self, world_id: str, world_revision: int | None = None) -> list[dict[str, Any]]:
+        """Read claims, deriving conflicts without overwriting original status."""
+        self.get_world(world_id)
+        if world_revision is not None:
+            if not isinstance(world_revision, int) or isinstance(world_revision, bool) or world_revision < 0:
+                raise ValidationError("world_revision must be a non-negative integer")
+            rows = self._connection.execute(
+                "SELECT * FROM epistemic_claims WHERE world_id = ? AND world_revision = ? ORDER BY recorded_at, claim_id",
+                (world_id, world_revision),
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                "SELECT * FROM epistemic_claims WHERE world_id = ? ORDER BY world_revision, recorded_at, claim_id",
+                (world_id,),
+            ).fetchall()
+
+        decoded = []
+        values_by_key: dict[tuple[str, int, str], set[str]] = {}
+        for row in rows:
+            item = dict(row)
+            raw_value = item.pop("value_json")
+            item["value"] = json.loads(raw_value) if raw_value is not None else None
+            item["epistemic_status"] = item.pop("epistemic_status")
+            item["effective_status"] = item["epistemic_status"]
+            if item["epistemic_status"] != "UNKNOWN":
+                key = (item["subject"], int(item["world_revision"]), item["predicate"])
+                values_by_key.setdefault(key, set()).add(_json(item["value"]))
+            decoded.append(item)
+
+        for item in decoded:
+            key = (item["subject"], int(item["world_revision"]), item["predicate"])
+            if len(values_by_key.get(key, set())) > 1:
+                item["effective_status"] = "CONFLICTED"
+        return decoded
 
     def list_events(self, world_id: str) -> list[dict[str, Any]]:
         self.get_world(world_id)
