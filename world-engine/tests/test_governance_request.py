@@ -80,3 +80,26 @@ def test_invalid_request_binding_is_rejected(tmp_path, field, value):
         invalid[field] = value
         with pytest.raises(ValidationError):
             build_governance_request(invalid)
+
+
+def test_request_fingerprint_recomputes_from_embedded_proposal_snapshot(tmp_path):
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        proposal = _proposal(store)
+        request = build_governance_request(proposal)
+
+        assert proposal_fingerprint(request["proposal"]) == request["proposal_fingerprint"]
+        assert request["proposal"]["world_id"] == request["world_id"]
+        assert request["proposal"]["expected_revision"] == request["expected_revision"]
+
+
+def test_tampering_with_embedded_proposal_breaks_fingerprint_binding(tmp_path):
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        request = build_governance_request(_proposal(store))
+        original_fingerprint = request["proposal_fingerprint"]
+
+        request["proposal"]["proposed_state_change"][0]["attributes"]["grain"] = 999
+
+        assert proposal_fingerprint(request["proposal"]) != original_fingerprint
+        assert request["execution_permitted"] is False
+        assert request["mutates_world"] is False
+        assert request["grants_authority"] is False
