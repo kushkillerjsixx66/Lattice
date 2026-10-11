@@ -178,3 +178,73 @@ def preview_turn(store: WorldStore, world_id: str = "valley") -> dict[str, Any]:
         "proposed_changes": updates,
         "settlements": reports,
     }
+
+
+
+def preview_grain_transfer(
+    store: WorldStore,
+    amount: int,
+    world_id: str = "valley",
+    route_id: str = "north-south-trade",
+) -> dict[str, Any]:
+    """Propose a north-to-south grain transfer without mutating stored state.
+
+    The requested amount must fit both the route's per-turn capacity and the
+    origin's current grain store. The caller must separately govern and apply
+    the returned exact changes against expected_revision.
+    """
+    if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
+        raise ValidationError("transfer amount must be a positive integer")
+
+    world = store.get_world(world_id)
+    entities = {entity["entity_id"]: entity for entity in store.list_entities(world_id)}
+    route = entities.get(route_id)
+    if route is None or route["entity_type"] != "trade_route":
+        raise ValidationError(f"trade route not found: {route_id}")
+    if route["lifecycle_state"] != "ACTIVE" or route["attributes"].get("open") is not True:
+        raise ValidationError(f"trade route is not open: {route_id}")
+
+    capacity = route["attributes"].get("capacity_per_turn")
+    if not isinstance(capacity, int) or isinstance(capacity, bool) or capacity < 0:
+        raise ValidationError(f"trade route {route_id} has invalid capacity")
+    if amount > capacity:
+        raise ValidationError(f"transfer amount exceeds route capacity: {capacity}")
+
+    origin_id = route["relationships"].get("origin")
+    destination_id = route["relationships"].get("destination")
+    origin = entities.get(origin_id)
+    destination = entities.get(destination_id)
+    if origin is None or destination is None:
+        raise ValidationError("trade route origin and destination must exist")
+    if origin["entity_type"] != "settlement" or destination["entity_type"] != "settlement":
+        raise ValidationError("trade route endpoints must be settlements")
+
+    origin_grain = origin["attributes"].get("grain")
+    destination_grain = destination["attributes"].get("grain")
+    for entity_id, grain in ((origin_id, origin_grain), (destination_id, destination_grain)):
+        if not isinstance(grain, int) or isinstance(grain, bool) or grain < 0:
+            raise ValidationError(f"{entity_id} grain must be a non-negative integer")
+    if amount > origin_grain:
+        raise ValidationError(f"transfer amount exceeds available grain: {origin_grain}")
+
+    origin_attributes = dict(origin["attributes"])
+    destination_attributes = dict(destination["attributes"])
+    origin_attributes["grain"] = origin_grain - amount
+    destination_attributes["grain"] = destination_grain + amount
+    return {
+        "world_id": world_id,
+        "expected_revision": world["revision"],
+        "ruleset_id": RULESET_ID,
+        "route_id": route_id,
+        "transfer": {
+            "resource": "grain",
+            "amount": amount,
+            "origin": origin_id,
+            "destination": destination_id,
+        },
+        "mutates_world": False,
+        "proposed_changes": [
+            {"op": "update", "entity_id": origin_id, "attributes": origin_attributes},
+            {"op": "update", "entity_id": destination_id, "attributes": destination_attributes},
+        ],
+    }
