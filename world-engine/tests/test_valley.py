@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from engine.store import ValidationError, WorldStore
-from engine.valley import RULESET_ID, preview_turn, seed_valley
+from engine.valley import RULESET_ID, preview_grain_transfer, preview_turn, seed_valley
 
 
 def test_seed_valley_creates_expected_entities_and_lineage(tmp_path):
@@ -115,4 +115,51 @@ def test_preview_requires_the_valley_domain_entities(tmp_path):
 
     assert store.get_world("incomplete")["revision"] == 0
     assert len(store.list_events("incomplete")) == 1
+    store.close()
+
+
+def test_preview_grain_transfer_is_bounded_and_non_mutating(tmp_path):
+    store = WorldStore(tmp_path / "world.sqlite3")
+    seed_valley(store)
+    before_world = store.get_world("valley")
+    before_entities = store.list_entities("valley")
+    before_events = store.list_events("valley")
+
+    proposal = preview_grain_transfer(store, amount=5)
+
+    assert proposal["expected_revision"] == 1
+    assert proposal["mutates_world"] is False
+    assert proposal["transfer"] == {
+        "resource": "grain", "amount": 5, "origin": "north", "destination": "south"
+    }
+    assert proposal["proposed_changes"][0]["attributes"]["grain"] == 75
+    assert proposal["proposed_changes"][1]["attributes"]["grain"] == 69
+    assert store.get_world("valley") == before_world
+    assert store.list_entities("valley") == before_entities
+    assert store.list_events("valley") == before_events
+    store.close()
+
+
+@pytest.mark.parametrize("amount", [0, -1, True, 1.5, 11])
+def test_preview_grain_transfer_rejects_invalid_or_over_capacity_amounts(tmp_path, amount):
+    store = WorldStore(tmp_path / "world.sqlite3")
+    seed_valley(store)
+    with pytest.raises(ValidationError):
+        preview_grain_transfer(store, amount=amount)
+    assert store.get_world("valley")["revision"] == 1
+    assert len(store.list_events("valley")) == 2
+    store.close()
+
+
+def test_preview_grain_transfer_rejects_insufficient_origin_stock(tmp_path):
+    store = WorldStore(tmp_path / "world.sqlite3")
+    seed_valley(store)
+    store.apply_transition(
+        "valley", 1,
+        [{"op": "update", "entity_id": "north", "attributes": {"grain": 2}}],
+        actor="test-fixture", intent="reduce origin stock",
+    )
+    with pytest.raises(ValidationError, match="available grain"):
+        preview_grain_transfer(store, amount=3)
+    assert store.get_world("valley")["revision"] == 2
     store.close()
