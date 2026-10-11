@@ -5,6 +5,7 @@ authenticate a decision, grant authority, or execute a world transition.
 """
 from __future__ import annotations
 
+import copy
 import uuid
 from typing import Any, Mapping
 
@@ -41,6 +42,22 @@ def build_governance_request(proposal: Mapping[str, Any]) -> dict[str, Any]:
     ):
         raise ValidationError("expected_revision must be a non-negative integer")
 
+    fields = (
+        "proposal_schema",
+        "proposal_id",
+        "world_id",
+        "expected_revision",
+        "actor",
+        "intent",
+        "authority_reference",
+        "constraints",
+        "evidence",
+        "proposed_state_change",
+        "effect_description",
+        "reversibility",
+        "recovery_plan",
+        "lineage_reference",
+    )
     return {
         "request_schema": "world-governance-request-v0.1",
         "request_id": str(uuid.uuid4()),
@@ -48,22 +65,7 @@ def build_governance_request(proposal: Mapping[str, Any]) -> dict[str, Any]:
         "world_id": world_id,
         "expected_revision": expected_revision,
         "proposal_fingerprint": fingerprint,
-        "proposal": {key: proposal[key] for key in (
-            "proposal_schema",
-            "proposal_id",
-            "world_id",
-            "expected_revision",
-            "actor",
-            "intent",
-            "authority_reference",
-            "constraints",
-            "evidence",
-            "proposed_state_change",
-            "effect_description",
-            "reversibility",
-            "recovery_plan",
-            "lineage_reference",
-        )},
+        "proposal": copy.deepcopy({key: proposal[key] for key in fields}),
         "requested_review_areas": list(REQUESTED_REVIEW_AREAS),
         "request_status": "PENDING_EXTERNAL_EVALUATION",
         "authorization_status": "NOT_EVALUATED",
