@@ -4,7 +4,7 @@ A persistent hybrid world-building simulation designed as an experimental enviro
 
 ## Status
 
-**Prototype implementation in progress.** The SQLite state store and deterministic Valley scenario rules are implemented with tests. The SQLite-backed epistemic claim ledger records source-scoped claims and derives revision-scoped conflicts without adjudicating them. The prediction ledger registers immutable expectations against the current world revision and evaluates them later against unambiguous observed claims. A read-only revision comparison reconstructs committed entity state from event history and reports descriptive differences without claiming causation. A read-only turn-evaluation report joins preregistered predictions, explicit evaluations, relevant revision-scoped claims, and state differences without evaluating predictions or inferring causation. A validated transition-proposal envelope binds a proposed change to an expected revision, actor, intent, authority reference, constraints, evidence, effect, reversibility, recovery plan, and lineage. A governance-receipt validator checks proposal binding but leaves authenticity and policy evaluation unresolved. A read-only governance-request contract packages a proposal and its fingerprint for external review; it does not decide whether the proposal may execute. A receipt revalidation contract detects whether the proposal's expected revision has drifted, while leaving receipt authenticity, policy evaluation, and authorization unresolved. The MCP server and execution gateway remain unimplemented. No deployment or autonomous execution is enabled.
+**Prototype implementation in progress.** The SQLite state store and deterministic Valley scenario rules are implemented with tests. A read-only full-turn preview now composes food/water outcomes with the proposed simulation-time advance, pinned to one expected revision; it does not execute or authorize the turn. The SQLite-backed epistemic claim ledger records source-scoped claims and derives revision-scoped conflicts without adjudicating them. The prediction ledger registers immutable expectations against the current world revision and evaluates them later against unambiguous observed claims. A read-only revision comparison reconstructs committed entity state from event history and reports descriptive differences without claiming causation. A read-only turn-evaluation report joins preregistered predictions, explicit evaluations, relevant revision-scoped claims, and state differences without evaluating predictions or inferring causation. A validated transition-proposal envelope binds a proposed change to an expected revision, actor, intent, authority reference, constraints, evidence, effect, reversibility, recovery plan, and lineage. A governance-receipt validator checks proposal binding but leaves authenticity and policy evaluation unresolved. A read-only governance-request contract packages a proposal and its fingerprint for external review; it does not decide whether the proposal may execute. A receipt revalidation contract detects whether the proposal's expected revision has drifted, while leaving receipt authenticity, policy evaluation, and authorization unresolved. The MCP server and execution gateway remain unimplemented. No deployment or autonomous execution is enabled.
 
 ## Core separation
 
@@ -23,7 +23,7 @@ Run this from the repository root after setting PYTHONPATH=world-engine in your 
 
 ```python
 from engine.store import WorldStore
-from engine.valley import preview_grain_transfer, preview_turn, seed_valley
+from engine.valley import preview_grain_transfer, preview_turn, seed_valley\nfrom engine.turn_loop import preview_valley_turn
 from engine.epistemic import observe_committed_world, read_epistemic_model
 
 with WorldStore("valley.sqlite3") as store:
@@ -47,7 +47,7 @@ Run the world-engine suite:
 python -m pytest world-engine/tests -q
 ```
 
-Tests cover persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, preregistered prediction evaluation, read-only outcome comparisons, read-only turn-evaluation reports, non-authorizing transition proposal validation, governance receipt binding, read-only external governance request construction, and governance-receipt freshness checks that remain non-authorizing.
+Tests cover full-turn preview composition and invalid-step rejection, persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, preregistered prediction evaluation, read-only outcome comparisons, read-only turn-evaluation reports, non-authorizing transition proposal validation, governance receipt binding, read-only external governance request construction, and governance-receipt freshness checks that remain non-authorizing.
 
 ## Governance
 
