@@ -134,3 +134,37 @@ def test_self_asserted_verification_metadata_never_authenticates_receipt(
         assert result["execution_permitted"] is False
         assert result["mutates_world"] is False
         assert result["grants_authority"] is False
+
+
+@pytest.mark.parametrize("field", [
+    "proposal_schema",
+    "proposal_id",
+    "world_id",
+    "expected_revision",
+    "actor",
+    "intent",
+    "authority_reference",
+    "constraints",
+    "evidence",
+    "proposed_state_change",
+    "effect_description",
+    "reversibility",
+    "recovery_plan",
+    "lineage_reference",
+])
+def test_fingerprint_covers_every_declared_decision_relevant_field(tmp_path, field):
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        proposal = _proposal(store)
+        original = proposal_fingerprint(proposal)
+        changed = copy.deepcopy(proposal)
+        changed[field] = {"tampered": True}
+
+        assert proposal_fingerprint(changed) != original
+
+
+def test_fingerprint_is_stable_under_mapping_key_order_changes(tmp_path):
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        proposal = _proposal(store)
+        reordered = dict(reversed(list(proposal.items())))
+
+        assert proposal_fingerprint(reordered) == proposal_fingerprint(proposal)
