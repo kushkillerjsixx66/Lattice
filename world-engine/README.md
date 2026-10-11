@@ -4,7 +4,7 @@ A persistent hybrid world-building simulation designed as an experimental enviro
 
 ## Status
 
-**Prototype implementation in progress.** The SQLite state store and deterministic Valley scenario rules are implemented with tests. The SQLite-backed epistemic claim ledger records source-scoped claims and derives revision-scoped conflicts without adjudicating them. The prediction ledger registers immutable expectations against the current world revision and evaluates them later against unambiguous observed claims. The MCP server and governance gateway remain unimplemented. No deployment or autonomous execution is enabled.
+**Prototype implementation in progress.** The SQLite state store and deterministic Valley scenario rules are implemented with tests. The SQLite-backed epistemic claim ledger records source-scoped claims and derives revision-scoped conflicts without adjudicating them. The prediction ledger registers immutable expectations against the current world revision and evaluates them later against unambiguous observed claims. A read-only revision comparison reconstructs committed entity state from event history and reports descriptive differences without claiming causation. The MCP server and governance gateway remain unimplemented. No deployment or autonomous execution is enabled.
 
 ## Core separation
 
@@ -47,7 +47,7 @@ Run the world-engine suite:
 python -m pytest world-engine/tests -q
 ```
 
-Tests cover persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, and preregistered prediction evaluation.
+Tests cover persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, preregistered prediction evaluation, and read-only outcome comparisons across committed revisions.
 
 ## Governance
 
