@@ -86,16 +86,14 @@ def seed_valley(store: WorldStore, world_id: str = "valley") -> dict[str, Any]:
     else:
         raise ValidationError(f"world already exists: {world_id}")
 
-    world = store.create_world("The Valley", world_id=world_id)
-    store.apply_transition(
-        world_id,
-        world["revision"],
+    return store.create_world_with_entities(
+        "The Valley",
         [{"op": "create", **entity} for entity in SEED_ENTITIES],
+        world_id=world_id,
         actor="scenario-seeder",
         intent="initialize deterministic Valley scenario v0.1",
         event_type="SCENARIO_SEEDED",
     )
-    return store.get_world(world_id)
 
 
 def preview_turn(store: WorldStore, world_id: str = "valley") -> dict[str, Any]:

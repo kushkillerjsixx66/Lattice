@@ -23,6 +23,34 @@ def create_settlement(store, revision=0, entity_id="north"):
     )
 
 
+def test_world_initialization_rolls_back_world_entities_and_events_atomically(tmp_path):
+    store = WorldStore(tmp_path / "world.sqlite3")
+    entities = [
+        {"op": "create", "entity_id": "north", "entity_type": "settlement",
+         "attributes": {"population": 100}, "relationships": {},
+         "lifecycle_state": "ACTIVE"},
+        {"op": "create", "entity_id": "north", "entity_type": "settlement",
+         "attributes": {"population": 200}, "relationships": {},
+         "lifecycle_state": "ACTIVE"},
+    ]
+
+    with pytest.raises(ValidationError, match="entity already exists"):
+        store.create_world_with_entities(
+            "Atomic fixture", entities, world_id="atomic-fixture",
+            actor="test-seeder", intent="test atomic initialization",
+        )
+
+    with pytest.raises(ValidationError, match="unknown world"):
+        store.get_world("atomic-fixture")
+    assert store._connection.execute(
+        "SELECT COUNT(*) FROM events WHERE world_id = ?", ("atomic-fixture",)
+    ).fetchone()[0] == 0
+    assert store._connection.execute(
+        "SELECT COUNT(*) FROM entities WHERE world_id = ?", ("atomic-fixture",)
+    ).fetchone()[0] == 0
+    store.close()
+
+
 def test_world_state_persists_across_store_instances(tmp_path):
     store, _ = create_store(tmp_path)
     create_settlement(store)
