@@ -113,6 +113,52 @@ class WorldStore:
                 world_revision INTEGER NOT NULL CHECK (world_revision >= 0),
                 recorded_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS predictions (
+                prediction_id TEXT PRIMARY KEY,
+                world_id TEXT NOT NULL REFERENCES worlds(world_id),
+                subject TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                expected_value_json TEXT NOT NULL,
+                basis_revision INTEGER NOT NULL CHECK (basis_revision >= 0),
+                evaluate_after_revision INTEGER NOT NULL CHECK (evaluate_after_revision > basis_revision),
+                source TEXT NOT NULL,
+                source_ref TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_predictions_scope
+                ON predictions(world_id, basis_revision, subject, predicate);
+            CREATE TABLE IF NOT EXISTS prediction_evaluations (
+                evaluation_id TEXT PRIMARY KEY,
+                prediction_id TEXT NOT NULL REFERENCES predictions(prediction_id),
+                evaluated_revision INTEGER NOT NULL CHECK (evaluated_revision >= 0),
+                observed_value_json TEXT,
+                outcome TEXT NOT NULL CHECK (outcome IN ('CONFIRMED', 'REFUTED', 'INDETERMINATE')),
+                evidence_ref TEXT NOT NULL,
+                evaluated_at TEXT NOT NULL,
+                UNIQUE(prediction_id, evaluated_revision)
+            );
+            CREATE INDEX IF NOT EXISTS idx_prediction_evaluations_prediction
+                ON prediction_evaluations(prediction_id, evaluated_revision);
+            CREATE TRIGGER IF NOT EXISTS predictions_reject_update
+            BEFORE UPDATE ON predictions
+            BEGIN
+                SELECT RAISE(ABORT, 'prediction history is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS predictions_reject_delete
+            BEFORE DELETE ON predictions
+            BEGIN
+                SELECT RAISE(ABORT, 'prediction history is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS prediction_evaluations_reject_update
+            BEFORE UPDATE ON prediction_evaluations
+            BEGIN
+                SELECT RAISE(ABORT, 'prediction evaluation history is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS prediction_evaluations_reject_delete
+            BEFORE DELETE ON prediction_evaluations
+            BEGIN
+                SELECT RAISE(ABORT, 'prediction evaluation history is append-only');
+            END;
             CREATE INDEX IF NOT EXISTS idx_epistemic_claims_scope
                 ON epistemic_claims(world_id, world_revision, subject, predicate);
             CREATE TRIGGER IF NOT EXISTS epistemic_claims_reject_update
@@ -480,6 +526,145 @@ class WorldStore:
             if len(values_by_key.get(key, set())) > 1:
                 item["effective_status"] = "CONFLICTED"
         return decoded
+
+    def record_prediction(
+        self,
+        world_id: str,
+        *,
+        subject: str,
+        predicate: str,
+        expected_value: Any,
+        basis_revision: int,
+        evaluate_after_revision: int,
+        source: str,
+        source_ref: str,
+    ) -> dict[str, Any]:
+        """Register an immutable, falsifiable prediction before its target revision."""
+        for field_name, value in (("subject", subject), ("predicate", predicate),
+                                  ("source", source), ("source_ref", source_ref)):
+            if not isinstance(value, str) or not value.strip():
+                raise ValidationError(f"prediction {field_name} must be a non-empty string")
+        for field_name, value in (("basis_revision", basis_revision),
+                                  ("evaluate_after_revision", evaluate_after_revision)):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValidationError(f"{field_name} must be a non-negative integer")
+        if evaluate_after_revision <= basis_revision:
+            raise ValidationError("evaluate_after_revision must be later than basis_revision")
+        try:
+            expected_json = _json(expected_value)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("expected_value must be JSON-serializable") from exc
+
+        prediction_id = str(uuid.uuid4())
+        created_at = _now()
+        with self._transaction() as db:
+            world = db.execute(
+                "SELECT revision FROM worlds WHERE world_id = ?", (world_id,)
+            ).fetchone()
+            if world is None:
+                raise ValidationError(f"unknown world: {world_id}")
+            current_revision = int(world["revision"])
+            if basis_revision != current_revision:
+                raise RevisionConflict(
+                    f"prediction basis revision {basis_revision} is not current revision {current_revision}"
+                )
+            db.execute(
+                "INSERT INTO predictions(prediction_id, world_id, subject, predicate, expected_value_json, basis_revision, evaluate_after_revision, source, source_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (prediction_id, world_id, subject.strip(), predicate.strip(), expected_json,
+                 basis_revision, evaluate_after_revision, source.strip(), source_ref.strip(), created_at),
+            )
+        return {
+            "prediction_id": prediction_id, "world_id": world_id,
+            "subject": subject.strip(), "predicate": predicate.strip(),
+            "expected_value": expected_value, "basis_revision": basis_revision,
+            "evaluate_after_revision": evaluate_after_revision,
+            "source": source.strip(), "source_ref": source_ref.strip(),
+            "created_at": created_at,
+        }
+
+    def list_predictions(self, world_id: str) -> list[dict[str, Any]]:
+        """Read immutable prediction registrations and preserve their original values."""
+        self.get_world(world_id)
+        rows = self._connection.execute(
+            "SELECT * FROM predictions WHERE world_id = ? ORDER BY basis_revision, created_at, prediction_id",
+            (world_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["expected_value"] = json.loads(item.pop("expected_value_json"))
+            result.append(item)
+        return result
+
+    def evaluate_prediction(
+        self, prediction_id: str, *, evaluated_revision: int, evidence_ref: str
+    ) -> dict[str, Any]:
+        """Evaluate only from unambiguous OBSERVED claims at a later world revision."""
+        if not isinstance(evaluated_revision, int) or isinstance(evaluated_revision, bool) or evaluated_revision < 0:
+            raise ValidationError("evaluated_revision must be a non-negative integer")
+        if not isinstance(evidence_ref, str) or not evidence_ref.strip():
+            raise ValidationError("evidence_ref must be a non-empty string")
+        evaluation_id = str(uuid.uuid4())
+        evaluated_at = _now()
+        with self._transaction() as db:
+            prediction = db.execute(
+                "SELECT * FROM predictions WHERE prediction_id = ?", (prediction_id,)
+            ).fetchone()
+            if prediction is None:
+                raise ValidationError(f"unknown prediction: {prediction_id}")
+            world = db.execute(
+                "SELECT revision FROM worlds WHERE world_id = ?", (prediction["world_id"],)
+            ).fetchone()
+            if evaluated_revision <= int(prediction["basis_revision"]):
+                raise ValidationError("prediction cannot be evaluated at or before its basis revision")
+            if evaluated_revision < int(prediction["evaluate_after_revision"]):
+                raise ValidationError("prediction is not yet eligible for evaluation")
+            if evaluated_revision > int(world["revision"]):
+                raise ValidationError("evaluation revision exceeds current world revision")
+
+            claims = db.execute(
+                "SELECT value_json FROM epistemic_claims WHERE world_id = ? AND subject = ? AND predicate = ? AND world_revision = ? AND epistemic_status = 'OBSERVED'",
+                (prediction["world_id"], prediction["subject"], prediction["predicate"], evaluated_revision),
+            ).fetchall()
+            observed_values = {row["value_json"] for row in claims}
+            if len(observed_values) != 1:
+                outcome = "INDETERMINATE"
+                observed_json = None
+            else:
+                observed_json = next(iter(observed_values))
+                outcome = "CONFIRMED" if observed_json == prediction["expected_value_json"] else "REFUTED"
+            db.execute(
+                "INSERT INTO prediction_evaluations(evaluation_id, prediction_id, evaluated_revision, observed_value_json, outcome, evidence_ref, evaluated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (evaluation_id, prediction_id, evaluated_revision, observed_json, outcome,
+                 evidence_ref.strip(), evaluated_at),
+            )
+        return {
+            "evaluation_id": evaluation_id, "prediction_id": prediction_id,
+            "world_id": prediction["world_id"], "evaluated_revision": evaluated_revision,
+            "observed_value": json.loads(observed_json) if observed_json is not None else None,
+            "outcome": outcome, "evidence_ref": evidence_ref.strip(),
+            "evaluated_at": evaluated_at,
+        }
+
+    def list_prediction_evaluations(self, prediction_id: str) -> list[dict[str, Any]]:
+        """Return append-only evaluations for one prediction."""
+        rows = self._connection.execute(
+            "SELECT e.* FROM prediction_evaluations e JOIN predictions p ON p.prediction_id = e.prediction_id WHERE p.prediction_id = ? ORDER BY e.evaluated_revision, e.evaluated_at, e.evaluation_id",
+            (prediction_id,),
+        ).fetchall()
+        if not rows:
+            exists = self._connection.execute(
+                "SELECT 1 FROM predictions WHERE prediction_id = ?", (prediction_id,)
+            ).fetchone()
+            if exists is None:
+                raise ValidationError(f"unknown prediction: {prediction_id}")
+        result = []
+        for row in rows:
+            item = dict(row)
+            raw_value = item.pop("observed_value_json")
+            item["observed_value"] = json.loads(raw_value) if raw_value is not None else None
+            result.append(item)
+        return result
 
     def list_events(self, world_id: str) -> list[dict[str, Any]]:
         self.get_world(world_id)
