@@ -50,7 +50,7 @@ Run the world-engine suite:
 python -m pytest world-engine/tests -q
 ```
 
-Tests cover full-turn preview composition and invalid-step rejection, atomic turn commit, stale-revision rejection and rollback, invalid turn-shape rejection, atomic world initialization and rollback, persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, preregistered prediction evaluation, read-only outcome comparisons, read-only turn-evaluation reports, non-authorizing transition proposal validation, governance receipt binding, read-only external governance request construction, and governance-receipt freshness checks that remain non-authorizing.
+Tests cover full-turn preview composition and invalid-step rejection, atomic turn commit and event-lineage replay, stale-revision rejection and rollback, invalid turn-shape rejection, atomic world initialization and rollback, persistent state, revision/event lineage, stale-write rejection, transaction rollback, append-only histories, explicit simulation-time advancement, Valley seeding, deterministic previews, food-shortage accounting, bounded non-mutating trade proposals, revision-scoped epistemic claims and conflict detection, preregistered prediction evaluation, read-only outcome comparisons, read-only turn-evaluation reports, non-authorizing transition proposal validation, governance receipt binding, read-only external governance request construction, and governance-receipt freshness checks that remain non-authorizing.
 
 ## Governance
 
