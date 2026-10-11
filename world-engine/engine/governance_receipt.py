@@ -33,6 +33,8 @@ _BOUND_FIELDS = (
 
 def proposal_fingerprint(proposal: Mapping[str, Any]) -> str:
     """Return a deterministic digest of the proposal's decision-relevant fields."""
+    if not isinstance(proposal, Mapping):
+        raise ValidationError("proposal must be an object")
     missing = [field for field in _BOUND_FIELDS if field not in proposal]
     if missing:
         raise ValidationError(f"proposal missing fingerprint fields: {', '.join(missing)}")
