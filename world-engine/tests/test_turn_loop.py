@@ -33,11 +33,11 @@ def test_preview_valley_turn_composes_food_and_time_without_mutation(tmp_path):
         assert store.list_events("valley") == before_events
 
 
-@pytest.mark.parametrize("steps", [0, -1, True, 1.5, "1", None])
+@pytest.mark.parametrize("steps", [0, -1, 2, True, 1.5, "1", None])
 def test_preview_valley_turn_rejects_invalid_time_steps(tmp_path, steps):
     with WorldStore(tmp_path / "world.sqlite3") as store:
         seed_valley(store)
-        with pytest.raises(ValidationError, match="positive integer"):
+        with pytest.raises(ValidationError, match="exactly one step"):
             preview_valley_turn(store, steps=steps)
         assert store.get_world("valley")["revision"] == 1
         assert store.get_world("valley")["world_time"] == 0
