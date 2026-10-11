@@ -377,6 +377,125 @@ class WorldStore:
             "outcome": "COMMITTED",
         }
 
+    def commit_turn_transition(
+        self,
+        world_id: str,
+        expected_revision: int,
+        changes: Sequence[Mapping[str, Any]],
+        *,
+        actor: str,
+        intent: str,
+        ruleset_id: str,
+        steps: int = 1,
+    ) -> dict[str, Any]:
+        """Atomically commit one turn's entity updates and simulation time.
+
+        This is a storage primitive, not a governance gateway. It checks exact
+        revision, turn shape, and data integrity, but does not authenticate a
+        receipt, evaluate policy, or grant execution authority. Runtime callers
+        must not expose this method until the required governance boundary exists.
+        """
+        if not isinstance(expected_revision, int) or isinstance(expected_revision, bool) or expected_revision < 0:
+            raise ValidationError("expected_revision must be a non-negative integer")
+        if not isinstance(steps, int) or isinstance(steps, bool) or steps != 1:
+            raise ValidationError("committed Valley turns currently require exactly one step")
+        for label, value in (("actor", actor), ("intent", intent), ("ruleset_id", ruleset_id)):
+            if not isinstance(value, str) or not value.strip():
+                raise ValidationError(f"{label} must be a non-empty string")
+        if not changes:
+            raise ValidationError("turn must contain at least one entity update")
+
+        normalized = [self._validate_change(change) for change in changes]
+        if any(change["op"] != "update" for change in normalized):
+            raise ValidationError("turn transitions may contain update operations only")
+        if any(set(change) != {"op", "entity_id", "attributes"} for change in normalized):
+            raise ValidationError("turn updates may change attributes only")
+        entity_ids = [change["entity_id"] for change in normalized]
+        if len(entity_ids) != len(set(entity_ids)):
+            raise ValidationError("turn may update each entity at most once")
+        try:
+            for change in normalized:
+                _json(change["attributes"])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("turn attributes must be JSON-serializable") from exc
+
+        event_id = str(uuid.uuid4())
+        with self._transaction() as db:
+            world = db.execute(
+                "SELECT revision, world_time FROM worlds WHERE world_id = ?", (world_id,)
+            ).fetchone()
+            if world is None:
+                raise ValidationError(f"unknown world: {world_id}")
+            actual_revision = int(world["revision"])
+            if actual_revision != expected_revision:
+                raise RevisionConflict(
+                    f"expected revision {expected_revision}, current revision is {actual_revision}"
+                )
+            pre_time = int(world["world_time"])
+            post_time = pre_time + steps
+            post_revision = actual_revision + 1
+            before_after: list[dict[str, Any]] = []
+
+            for change in normalized:
+                entity_id = change["entity_id"]
+                current = db.execute(
+                    "SELECT * FROM entities WHERE world_id = ? AND entity_id = ?",
+                    (world_id, entity_id),
+                ).fetchone()
+                if current is None:
+                    raise ValidationError(f"cannot update missing entity: {entity_id}")
+                old = self._entity_dict(current)
+                new_attributes = change["attributes"]
+                db.execute(
+                    "UPDATE entities SET attributes_json = ?, updated_revision = ? "
+                    "WHERE world_id = ? AND entity_id = ?",
+                    (_json(new_attributes), post_revision, world_id, entity_id),
+                )
+                before_after.append({
+                    "op": "update",
+                    "entity_id": entity_id,
+                    "before": old,
+                    "after": {
+                        "entity_type": old["entity_type"],
+                        "attributes": new_attributes,
+                        "relationships": old["relationships"],
+                        "lifecycle_state": old["lifecycle_state"],
+                    },
+                })
+
+            db.execute(
+                "UPDATE worlds SET revision = ?, world_time = ? WHERE world_id = ?",
+                (post_revision, post_time, world_id),
+            )
+            db.execute(
+                "INSERT INTO events(event_id, world_id, event_type, pre_revision, post_revision, actor, intent, payload_json, outcome, event_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    event_id, world_id, "VALLEY_TURN_COMMITTED",
+                    actual_revision, post_revision, actor.strip(), intent.strip(),
+                    _json({
+                        "ruleset_id": ruleset_id.strip(),
+                        "steps": steps,
+                        "pre_world_time": pre_time,
+                        "post_world_time": post_time,
+                        "changes": before_after,
+                    }),
+                    "COMMITTED", _now(),
+                ),
+            )
+
+        return {
+            "event_id": event_id,
+            "world_id": world_id,
+            "pre_revision": actual_revision,
+            "post_revision": post_revision,
+            "pre_world_time": pre_time,
+            "post_world_time": post_time,
+            "ruleset_id": ruleset_id.strip(),
+            "outcome": "COMMITTED",
+            "authorization_evaluated": False,
+            "execution_authorized": False,
+        }
+
     def apply_transition(
         self,
         world_id: str,
