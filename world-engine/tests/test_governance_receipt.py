@@ -112,3 +112,25 @@ def test_fingerprint_changes_when_effect_changes(tmp_path):
 def test_fingerprint_rejects_non_mapping_proposals(proposal):
     with pytest.raises(ValidationError, match="proposal must be an object"):
         proposal_fingerprint(proposal)
+
+
+@pytest.mark.parametrize(
+    "self_asserted_field",
+    ["verified", "signature_valid", "trusted", "issuer_verified"],
+)
+def test_self_asserted_verification_metadata_never_authenticates_receipt(
+    tmp_path, self_asserted_field
+):
+    """Caller-controlled claims cannot substitute for an independent verifier."""
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        proposal = _proposal(store)
+        receipt = _receipt(proposal)
+        receipt[self_asserted_field] = True
+
+        result = validate_governance_receipt(proposal, receipt)
+
+        assert result["receipt_binding_status"] == "MATCHED_UNVERIFIED"
+        assert result["authorization_status"] == "UNVERIFIED"
+        assert result["execution_permitted"] is False
+        assert result["mutates_world"] is False
+        assert result["grants_authority"] is False
