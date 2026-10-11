@@ -23,12 +23,18 @@ Run this from the repository root after setting PYTHONPATH=world-engine in your 
 
 ```python
 from engine.store import WorldStore
-from engine.valley import preview_grain_transfer, preview_turn, seed_valley\nfrom engine.epistemic import observe_committed_world, read_epistemic_model
+from engine.valley import preview_grain_transfer, preview_turn, seed_valley
+from engine.epistemic import observe_committed_world, read_epistemic_model
 
 with WorldStore("valley.sqlite3") as store:
     seed_valley(store)  # Explicit initialization; do not expose as an ungoverned tool.
     proposal = preview_turn(store)  # Pure preview; does not mutate world state.
-    print(proposal)\n    trade = preview_grain_transfer(store, amount=5)  # Pure proposal; still not execution.\n    print(trade)\n    observe_committed_world(store)  # Records claims about simulated state, not external reality.\n    model = read_epistemic_model(store)\n    print(model[\"conflicted_count\"])
+    print(proposal)
+    trade = preview_grain_transfer(store, amount=5)  # Pure proposal; still not execution.
+    print(trade)
+    observe_committed_world(store)  # Records claims about simulated state, not external reality.
+    model = read_epistemic_model(store)
+    print(model["conflicted_count"])
 ```
 
 The preview returns an expected revision and exact proposed entity updates. Applying those updates is a separate operation and must remain behind the applicable governance boundary. Previewing is not execution, because verbs should mean things.
