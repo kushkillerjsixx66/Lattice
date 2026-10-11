@@ -112,3 +112,39 @@ def test_event_history_rejects_update_and_delete(tmp_path):
 
     assert len(store.list_events("valley")) == 1
     store.close()
+
+
+def test_advance_world_time_is_revisioned_and_appends_lineage(tmp_path):
+    store, world = create_store(tmp_path)
+
+    result = store.advance_world_time(
+        "valley", world["revision"], 3, actor="test-operator", intent="advance test clock"
+    )
+
+    assert result["pre_world_time"] == 0
+    assert result["post_world_time"] == 3
+    assert result["pre_revision"] == 0
+    assert result["post_revision"] == 1
+    assert store.get_world("valley")["world_time"] == 3
+    event = store.list_events("valley")[-1]
+    assert event["event_type"] == "WORLD_TIME_ADVANCED"
+    assert event["payload"] == {"steps": 3, "pre_world_time": 0, "post_world_time": 3}
+    store.close()
+
+
+def test_advance_world_time_rejects_invalid_or_stale_requests(tmp_path):
+    store, _ = create_store(tmp_path)
+
+    for steps in (0, -1, True, 1.5):
+        with pytest.raises(ValidationError, match="steps"):
+            store.advance_world_time(
+                "valley", 0, steps, actor="test-operator", intent="invalid clock change"
+            )
+
+    store.advance_world_time("valley", 0, 1, actor="test-operator", intent="advance clock")
+    with pytest.raises(RevisionConflict):
+        store.advance_world_time("valley", 0, 1, actor="test-operator", intent="stale clock change")
+    assert store.get_world("valley")["world_time"] == 1
+    assert store.get_world("valley")["revision"] == 1
+    assert len(store.list_events("valley")) == 2
+    store.close()
