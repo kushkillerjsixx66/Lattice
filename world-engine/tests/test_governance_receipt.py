@@ -106,3 +106,9 @@ def test_fingerprint_changes_when_effect_changes(tmp_path):
         original = proposal_fingerprint(proposal)
         proposal["effect_description"] = "Different effect"
         assert proposal_fingerprint(proposal) != original
+
+
+@pytest.mark.parametrize("proposal", [None, [], "not-an-object", 42])
+def test_fingerprint_rejects_non_mapping_proposals(proposal):
+    with pytest.raises(ValidationError, match="proposal must be an object"):
+        proposal_fingerprint(proposal)
