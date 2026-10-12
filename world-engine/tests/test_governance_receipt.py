@@ -168,3 +168,16 @@ def test_fingerprint_is_stable_under_mapping_key_order_changes(tmp_path):
         reordered = dict(reversed(list(proposal.items())))
 
         assert proposal_fingerprint(reordered) == proposal_fingerprint(proposal)
+
+
+@pytest.mark.parametrize("decision", [None, 1, [], {}, set()])
+def test_unhashable_or_non_string_decision_is_rejected_as_validation_error(
+    tmp_path, decision
+):
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        proposal = _proposal(store)
+        receipt = _receipt(proposal)
+        receipt["decision"] = decision
+
+        with pytest.raises(ValidationError, match="receipt decision"):
+            validate_governance_receipt(proposal, receipt)
