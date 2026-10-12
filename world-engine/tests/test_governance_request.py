@@ -103,3 +103,35 @@ def test_tampering_with_embedded_proposal_breaks_fingerprint_binding(tmp_path):
         assert request["execution_permitted"] is False
         assert request["mutates_world"] is False
         assert request["grants_authority"] is False
+
+
+@pytest.mark.parametrize(
+    "self_asserted_field,value",
+    [
+        ("authorization_status", "AUTHORIZED"),
+        ("execution_status", "EXECUTED"),
+        ("execution_permitted", True),
+        ("mutates_world", True),
+        ("grants_authority", True),
+        ("verified", True),
+    ],
+)
+def test_caller_status_metadata_is_not_copied_or_treated_as_authority(
+    tmp_path, self_asserted_field, value
+):
+    """Proposal-side status claims cannot contaminate the external request."""
+    with WorldStore(tmp_path / "world.sqlite3") as store:
+        proposal = _proposal(store)
+        original_fingerprint = proposal_fingerprint(proposal)
+        proposal[self_asserted_field] = value
+
+        request = build_governance_request(proposal)
+
+        assert request["proposal_fingerprint"] == original_fingerprint
+        assert self_asserted_field not in request["proposal"]
+        assert request["authorization_status"] == "NOT_EVALUATED"
+        assert request["execution_status"] == "NOT_EXECUTED"
+        assert request["execution_permitted"] is False
+        assert request["mutates_world"] is False
+        assert request["grants_authority"] is False
+
