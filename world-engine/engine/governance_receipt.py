@@ -78,7 +78,8 @@ def validate_governance_receipt(
         elif not isinstance(value, str) or not value.strip():
             raise ValidationError(f"receipt {field} must be a non-empty string")
 
-    if receipt["decision"] not in DECISION_STATUSES:
+    decision = receipt["decision"]
+    if not isinstance(decision, str) or decision not in DECISION_STATUSES:
         raise ValidationError("receipt decision must be AUTHORIZED, DENIED, UNRESOLVED, or STALE")
 
     fingerprint = proposal_fingerprint(proposal)
