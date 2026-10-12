@@ -73,6 +73,12 @@ class ReceiptReplayStore:
     def close(self) -> None:
         self._db.close()
 
+    def __enter__(self) -> "ReceiptReplayStore":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     def consume(self, receipt_id: str, issuer_id: str, nonce: str, now: datetime) -> bool:
         try:
             self._db.execute(
