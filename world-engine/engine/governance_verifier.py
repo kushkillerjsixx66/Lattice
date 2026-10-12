@@ -11,7 +11,7 @@ import base64
 import binascii
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -224,7 +224,7 @@ def verify_signed_governance_receipt(
     if expires_at <= issued_at or (expires_at - issued_at).total_seconds() > max_ttl:
         return fail("REJECTED", "receipt validity window is invalid or exceeds issuer policy",
                     validity_status="FAILED", **result_fields)
-    if issued_at > current_time.timestamp() + clock_skew_seconds:
+    if issued_at > current_time + timedelta(seconds=clock_skew_seconds):
         return fail("REJECTED", "receipt issue time is in the future", validity_status="FAILED", **result_fields)
     if current_time >= expires_at or current_time < key_start or current_time >= key_end:
         return fail("REJECTED", "receipt or signing key is outside its validity window",
