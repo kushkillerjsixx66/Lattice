@@ -124,7 +124,6 @@ def test_missing_trust_configuration_is_unresolved(tmp_path):
 
 
 @pytest.mark.parametrize("change", [
-    {"decision": "DENIED"},
     {"world_id": "other-world"},
     {"proposal_fingerprint": "0" * 64},
     {"action_class": "admin.root"},
@@ -138,6 +137,20 @@ def test_modified_or_out_of_policy_signed_payload_does_not_verify(tmp_path, chan
         result = _verify(proposal, envelope, _trust(private_key), replay)
         assert result["verification_status"] == "REJECTED"
         assert result["execution_permitted"] is False
+
+
+def test_authenticated_denial_verifies_but_never_authorizes(tmp_path):
+    private_key = Ed25519PrivateKey.generate()
+    with WorldStore(tmp_path / "world.sqlite3") as world, ReceiptReplayStore() as replay:
+        proposal = _proposal(world)
+        envelope = _signed(proposal, private_key, decision="DENIED")
+        result = _verify(proposal, envelope, _trust(private_key), replay)
+        assert result["verification_status"] == "VERIFIED"
+        assert result["decision"] == "DENIED"
+        assert result["authorization_status"] == "NOT_EVALUATED"
+        assert result["execution_permitted"] is False
+        assert result["mutates_world"] is False
+        assert result["grants_authority"] is False
 
 
 def test_tampered_payload_signature_is_rejected(tmp_path):
