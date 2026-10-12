@@ -30,7 +30,7 @@ An implementation must independently establish and report each applicable dimens
 - **Freshness:** the current world revision and all relevant authority/policy versions are rechecked at the eventual execution boundary. A prior successful verification is not a permanent execution permit.
 - **Audit lineage:** record the verifier implementation/version, trust-record identifier/version, authenticated artifact digest, verification time, result dimensions, and unresolved limitations without storing secrets.
 
-The concrete signature scheme, canonical serialization, key distribution, rotation, revocation protocol, and trusted policy authority remain explicit integration decisions. Do not infer them from this contract.
+The reference verifier implementation selects Ed25519 signatures and deterministic UTF-8 JSON serialization for the v1 signed payload. This is a project-level technical choice, not Canonical Vault law. The actual external issuer, independently controlled trust-configuration source, key lifecycle operator, replay-store deployment, and trusted policy authority remain unresolved integration dependencies. The verifier accepts trust records only as a separate input and must be wired only by a trusted composition root that loads them from an independently controlled source. No production trust source or issuer is configured by this PR.
 
 ## Result contract
 
